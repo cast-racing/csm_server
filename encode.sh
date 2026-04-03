@@ -1,6 +1,6 @@
 AC_CFG="${AC_CFG:-$HOME/.steam/debian-installation/steamapps/common/assettocorsa/server/cfg}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cp "$SCRIPT_DIR/csp_extra_options.ini" "$SCRIPT_DIR/RaceFlags.lua" "$SCRIPT_DIR/SpeedLimiter.lua" "$AC_CFG/"
+cp "$SCRIPT_DIR/csp_extra_options.ini" "$SCRIPT_DIR/RaceFlags.lua" "$SCRIPT_DIR/SpeedLimiter.lua" "$SCRIPT_DIR/Respawn.lua" "$AC_CFG/"
 cd "$AC_CFG"
 python3 -c "
 import zlib, base64
