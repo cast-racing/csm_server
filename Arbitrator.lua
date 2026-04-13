@@ -124,7 +124,7 @@ function script.update(dt)
   end
 
   if s.timer >= TIME_THRESHOLD then
-    ac.resetCar(i)
+    ac.resetCar()
     showRespawnMessage(s, 'Respawning car', respawnReasonText(reason))
     s.reason = nil
     s.timer = 0
