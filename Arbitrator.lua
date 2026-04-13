@@ -27,20 +27,8 @@ local function showMessage(s, title, subtitle)
 end
 
 local function hasValidSurface(car)
-  local count = 0
-  local wheels = car.wheels or {}
-
-  for i = 0, 3 do
-    local w = wheels[i]
-    if w and w.contactPoint then
-      local t = w.contactPoint.surfaceType
-      if t == ac.SurfaceType.Track or t == ac.SurfaceType.Curb then
-        count = count + 1
-      end
-    end
-  end
-
-  return count >= 2
+  local t = car.surfaceType
+  return t == ac.SurfaceType.Track or t == ac.SurfaceType.Curb
 end
 
 local function isProgressing(car, s)
