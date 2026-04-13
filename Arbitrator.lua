@@ -26,11 +26,6 @@ local function showMessage(s, title, subtitle)
   s.messageKey = key
 end
 
-local function hasValidSurface(car)
-  local t = car.surfaceType
-  return t == ac.SurfaceType.Track or t == ac.SurfaceType.Curb
-end
-
 local function isProgressing(car, s)
   local spline = car.splinePosition or 0
 
@@ -53,14 +48,7 @@ end
 local function getCrashReason(car, s)
   local slow = (car.speedMs or 0) < MIN_SPEED
   local progressing = isProgressing(car, s)
-  local onTrack = hasValidSurface(car)
 
-  -- Off-track is treated as a crash condition, but restart still uses TIME_THRESHOLD countdown.
-  if not onTrack then
-    return 'off_track'
-  end
-
-  -- STALLED ON TRACK
   if slow and not progressing then
     return 'stalled'
   end
@@ -69,7 +57,6 @@ local function getCrashReason(car, s)
 end
 
 local function crashReasonText(reason)
-  if reason == 'off_track' then return 'Off track' end
   if reason == 'stalled' then return 'Stalled' end
   return 'Crash condition'
 end
