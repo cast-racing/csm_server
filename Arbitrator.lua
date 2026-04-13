@@ -15,6 +15,7 @@ local MIN_SPEED = 2.0 / 3.6   -- ~2 km/h
 local TIME_THRESHOLD = tweaksCfg.TIME_THRESHOLD
 local COOLDOWN = tweaksCfg.COOLDOWN
 local TARGET_CAR_INDEX = tweaksCfg.TARGET_CAR_INDEX
+local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
 
 local SPLINE_EPSILON = 0.0005
 
@@ -24,6 +25,24 @@ local function showMessage(s, title, subtitle)
 
   ac.setMessage(title, subtitle)
   s.messageKey = key
+end
+
+local function hasValidSurface(car)
+  local count = 0
+  local wheels = car.wheels or {}
+
+  for i = 0, 3 do
+    local w = wheels[i]
+    if w and w.surfaceValidTrack then
+      count = count + 1
+    end
+  end
+
+  return count >= 2
+end
+
+local function respawnCar(carIndex)
+  physics.teleportCarTo(carIndex, RESPAWN_SPAWN_SET)
 end
 
 local function isProgressing(car, s)
@@ -46,10 +65,12 @@ local function isProgressing(car, s)
 end
 
 local function getCrashReason(car, s)
-  local slow = (car.speedMs or 0) < MIN_SPEED
-  local progressing = isProgressing(car, s)
+  if not hasValidSurface(car) then
+    return 'off_surface'
+  end
 
-  if slow and not progressing then
+  local slow = (car.speedMs or 0) < MIN_SPEED
+  if slow and not isProgressing(car, s) then
     return 'stalled'
   end
 
@@ -57,13 +78,14 @@ local function getCrashReason(car, s)
 end
 
 local function crashReasonText(reason)
+  if reason == 'off_surface' then return 'Invalid surface' end
   if reason == 'stalled' then return 'Stalled' end
   return 'Crash condition'
 end
 
 local function resetState(s)
   s.reason = nil
-  s.reasonTime = 0
+  s.remaining = TIME_THRESHOLD
   s.messageKey = nil
 end
 
@@ -80,7 +102,7 @@ function script.update(dt)
   state[i] = state[i] or {
     lastSpline = nil,
     reason = nil,
-    reasonTime = 0,
+    remaining = TIME_THRESHOLD,
     cooldown = 0,
     messageKey = nil
   }
@@ -105,22 +127,18 @@ function script.update(dt)
   -- Crash condition changed: reset timer and accumulate from zero again.
   if s.reason ~= reason then
     s.reason = reason
-    s.reasonTime = 0
+    s.remaining = TIME_THRESHOLD
   end
 
-  s.reasonTime = s.reasonTime + dt
+  s.remaining = math.max(0, s.remaining - dt)
 
-  if s.reasonTime >= TIME_THRESHOLD then
-    ac.setMessage('Sending to pits', 'Stalled too long')
-    ac.debug('Sending car to pits due to stall')
-
-    ac.sendCarToPits(i)
-
+  if s.remaining <= 0 then
+    respawnCar(i)
+    showMessage(s, 'Respawning car', 'Teleporting to pits')
     s.cooldown = COOLDOWN
     resetState(s)
   else
-    local remaining = math.max(0, TIME_THRESHOLD - s.reasonTime)
-    local t = math.ceil(remaining)
+    local t = math.ceil(s.remaining)
     showMessage(s, 'Restart in ' .. t .. 's', crashReasonText(reason))
   end
 end
