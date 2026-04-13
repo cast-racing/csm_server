@@ -45,27 +45,9 @@ local function isProgressing(car, s)
   return d >= SPLINE_EPSILON
 end
 
-local function isOffRoad(car)
-  local trackPos = ac.getTrackPosition(car.splinePosition)
-  if not trackPos then return false end
-
-  local dx = car.position.x - trackPos.x
-  local dy = car.position.y - trackPos.y
-  local dz = car.position.z - trackPos.z
-
-  local dist2 = dx * dx + dy * dy + dz * dz
-
-  -- threshold depends on track width (tune this)
-  return dist2 > (6.0 * 6.0)
-end
-
 local function getCrashReason(car, s)
   local slow = (car.speedMs or 0) < MIN_SPEED
   local progressing = isProgressing(car, s)
-
-  if isOffRoad(car) then
-    return 'off_road'
-  end
 
   if slow and not progressing then
     return 'stalled'
@@ -75,7 +57,6 @@ local function getCrashReason(car, s)
 end
 
 local function crashReasonText(reason)
-  if reason == 'off_road' then return 'Off road' end
   if reason == 'stalled' then return 'Stalled' end
   return 'Crash condition'
 end
