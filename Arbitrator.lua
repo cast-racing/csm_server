@@ -40,7 +40,7 @@ local function hasValidSurface(car)
 
   for i = 0, 3 do
     local w = wheels[i]
-    if w and w.surface == 0 then
+    if w and w.contactPoint and w.contactPoint.surfaceType == ac.SurfaceType.Track then
       count = count + 1
     end
   end
