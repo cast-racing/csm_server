@@ -111,11 +111,10 @@ function script.update(dt)
   s.reasonTime = s.reasonTime + dt
 
   if s.reasonTime >= TIME_THRESHOLD then
-    -- HARD SESSION RESET
-    ac.setMessage('SESSION RESTART', 'Crash detected')
-    ac.debug('Restarting session due to crash')
+    ac.setMessage('Sending to pits', 'Stalled too long')
+    ac.debug('Sending car to pits due to stall')
 
-    ac.execConsoleCommand('restart_session')
+    ac.sendCarToPits(i)
 
     s.cooldown = COOLDOWN
     resetState(s)
