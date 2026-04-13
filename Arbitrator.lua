@@ -82,6 +82,12 @@ local function getRespawnReason(car, s)
   return nil
 end
 
+local function resetCountdown(s)
+  s.reason = nil
+  s.remaining = TIME_THRESHOLD
+  s.messageKey = nil
+end
+
 function script.update(dt)
   local count = sim.carsCount
   if count <= 0 then return end
@@ -96,7 +102,7 @@ function script.update(dt)
   state[i] = state[i] or {
     lastSpline = nil,
     reason = nil,
-    timer = 0,
+    remaining = TIME_THRESHOLD,
     cd = 0,
     messageKey = nil
   }
@@ -105,32 +111,30 @@ function script.update(dt)
 
   if s.cd > 0 then
     s.cd = s.cd - dt
+    resetCountdown(s)
     return
   end
 
   local reason = getRespawnReason(car, s)
   if not reason then
-    s.reason = nil
-    s.timer = 0
-    s.messageKey = nil
+    resetCountdown(s)
     return
   end
 
-  if s.reason == reason then
-    s.timer = s.timer + dt
-  else
+  if s.reason ~= reason then
     s.reason = reason
-    s.timer = dt
+    s.remaining = TIME_THRESHOLD
   end
 
-  if s.timer >= TIME_THRESHOLD then
-    ac.resetCar()
+  s.remaining = math.max(0, s.remaining - dt)
+
+  if s.remaining <= 0 then
+    physics.resetCarState(i)
     showRespawnMessage(s, 'Respawning car', respawnReasonText(reason))
-    s.reason = nil
-    s.timer = 0
+    resetCountdown(s)
     s.cd = COOLDOWN
   else
-    local secondsLeft = math.max(0, math.ceil(TIME_THRESHOLD - s.timer))
+    local secondsLeft = math.ceil(s.remaining)
     showRespawnMessage(s, 'Respawn in ' .. secondsLeft .. 's', respawnReasonText(reason))
   end
 end
