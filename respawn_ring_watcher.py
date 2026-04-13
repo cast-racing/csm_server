@@ -105,6 +105,13 @@ def main() -> int:
         dest="drain_on_start",
         help="Process queued events that existed before watcher startup.",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=os.environ.get("RESPAWN_VERBOSE", "").lower() in ("1", "true", "yes"),
+        help="Print verbose debug output.",
+    )
     args = parser.parse_args()
 
     if not args.restart_cmd:
@@ -112,10 +119,17 @@ def main() -> int:
         return 2
 
     ring = Ring(args.ring, args.slots, args.slot_size)
+    if args.verbose:
+        print(f"Ring file: {args.ring}")
+        print(f"  Slots: {args.slots}, Slot size: {args.slot_size}")
+        print(f"  Total size: {HEADER_SIZE + args.slots * args.slot_size} bytes")
+        print(f"  Dedupe window: {args.dedupe_window} sec")
+        print(f"  Restart command: {args.restart_cmd}")
     if args.drain_on_start:
         dropped = ring.drain()
         if dropped:
-            print(f"Dropped {dropped} stale respawn event(s) on startup")
+            if args.verbose or dropped > 0:
+                print(f"Dropped {dropped} stale respawn event(s) on startup")
     print(f"Watching {args.ring} for respawn events...")
 
     last_event_id = None
@@ -131,6 +145,8 @@ def main() -> int:
         event_id = f"{evt['unix_ts']}|{evt['car_index']}|{evt['sim_timestamp']}"
         now = time.monotonic()
         if event_id == last_event_id and (now - last_event_time) < args.dedupe_window:
+            if args.verbose:
+                print(f"[DEDUPE] Skipped duplicate event: {event_id}")
             continue
         last_event_id = event_id
         last_event_time = now
@@ -141,10 +157,15 @@ def main() -> int:
             f"reason={evt['reason']}",
             f"sim_ts={evt['sim_timestamp']}",
         )
+        if args.verbose:
+            print(f"  Timestamp: {evt['unix_ts']}")
+            print(f"  Running: {args.restart_cmd}")
 
         proc = subprocess.run(args.restart_cmd, shell=True, check=False)
         if proc.returncode != 0:
             print(f"Restart command failed with code {proc.returncode}")
+        elif args.verbose:
+            print(f"  Restart command succeeded")
 
 
 if __name__ == "__main__":
