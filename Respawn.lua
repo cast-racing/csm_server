@@ -1,28 +1,59 @@
 local state = {}
 
-local MIN_SPEED = 1.5
-local RESPAWN_DELAY = 2.0
-local COOLDOWN = 3.0
+local extrasCfg = ac.INIConfig.onlineExtras()
+local ringCfg = extrasCfg and extrasCfg:mapSection('RESPAWN_RING', {
+  ENABLED = 1,
+  PATH = '/tmp/csm_respawn.ring',
+  SLOTS = 128,
+  SLOT_SIZE = 1024,
+}) or {
+  ENABLED = 1,
+  PATH = '/tmp/csm_respawn.ring',
+  SLOTS = 128,
+  SLOT_SIZE = 1024,
+}
+
+local respawnRing = nil
+if ringCfg.ENABLED == 1 then
+  local ok, spsc = pcall(dofile, 'spsc.lua')
+  if ok and spsc and spsc.open then
+    respawnRing = spsc.open(ringCfg.PATH, ringCfg.SLOTS, ringCfg.SLOT_SIZE)
+  end
+end
+
+local function emit_respawn_event(carIndex, reason)
+  if not respawnRing then return end
+  local sim = ac.getSim()
+  local payload = string.format('%d|%d|%s|%.3f', os.time(), carIndex, reason or 'unknown', sim and sim.timestamp or 0)
+  respawnRing.push(payload)
+end
+
+local MIN_SPEED = 1.0 / 3.6   -- 1 km/h
+local TIME_THRESHOLD = 10.0
+local COOLDOWN = 10.0
 
 local SPLINE_EPSILON = 0.0005
 
 local function hasValidSurface(car)
+  local count = 0
+  local wheels = car.wheels or {}
+
   for i = 0, 3 do
-    local w = car.wheels and car.wheels[i]
+    local w = wheels[i]
     if w and w.surface == 0 then
-      return true
+      count = count + 1
     end
   end
-  return false
+
+  return count >= 2
 end
 
-local function isStuck(car, s)
-  local speed = car.speedMs or 0
-  local spline = car.splinePosition
+local function isProgressing(car, s)
+  local spline = car.splinePosition or 0
 
   if not s.lastSpline then
     s.lastSpline = spline
-    return false
+    return true
   end
 
   local d = math.abs(spline - s.lastSpline)
@@ -33,10 +64,7 @@ local function isStuck(car, s)
 
   s.lastSpline = spline
 
-  local noProgress = d < SPLINE_EPSILON
-  local slow = speed < MIN_SPEED
-  -- edge cases here are: stuck on wall (still on track) off track but still moving
-  return slow and (noProgress or (not hasValidSurface(car)))
+  return d >= SPLINE_EPSILON
 end
 
 function script.update(dt)
@@ -46,26 +74,57 @@ function script.update(dt)
     local car = ac.getCar(i)
 
     if car and car.isActive then
-      state[i] = state[i] or { t = 0, cd = 0, lastSpline = nil }
+      state[i] = state[i] or {
+        lastSpline = nil,
+        progressT = 0,
+        surfaceT = 0,
+        cd = 0
+      }
 
       local s = state[i]
 
+      -- cooldown
       if s.cd > 0 then
         s.cd = s.cd - dt
         goto continue
       end
 
-      local stuck = isStuck(car, s)
+      local speed = car.speedMs or 0
+      local slow = speed < MIN_SPEED
 
-      if stuck then
-        s.t = s.t + dt
+      local progressing = isProgressing(car, s)
+      local validSurface = hasValidSurface(car)
+
+
+      if slow then
+        if not progressing then
+          s.progressT = s.progressT + dt
+        else
+          s.progressT = 0
+        end
+
+        s.surfaceT = 0 
+
       else
-        s.t = 0
+        if not validSurface then
+          s.surfaceT = s.surfaceT + dt
+        else
+          s.surfaceT = 0
+        end
+
+        s.progressT = 0
       end
 
-      if s.t > RESPAWN_DELAY then
+      local shouldRespawn =
+        (s.progressT >= TIME_THRESHOLD) or
+        (s.surfaceT >= TIME_THRESHOLD)
+
+      if shouldRespawn then
         ac.resetCar(i)
-        s.t = 0
+        local reason = (s.progressT >= TIME_THRESHOLD) and 'stalled' or 'off_surface'
+        emit_respawn_event(i, reason)
+        s.progressT = 0
+        s.surfaceT = 0
         s.cd = COOLDOWN
       end
 
