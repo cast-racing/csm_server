@@ -19,8 +19,8 @@ local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
 
 local SPLINE_EPSILON = 0.0005
 local RACE_SESSION_TYPE = 3
-local RACE_START_GRACE_PERIOD = 15.0
 local GRID_START_MAX_LAP_COUNT = 0
+local GRID_EXIT_SPLINE_DELTA = 0.002
 
 local function splineDelta(a, b)
   local d = math.abs((a or 0) - (b or 0))
@@ -92,10 +92,26 @@ local function shouldIgnoreCrashReason(car, s, reason)
     end
   end
 
-  if sim.raceSessionType == RACE_SESSION_TYPE
-      and (sim.time or 0) <= RACE_START_GRACE_PERIOD
-      and (car.lapCount or 0) <= GRID_START_MAX_LAP_COUNT then
-    return true
+  if sim.raceSessionType == RACE_SESSION_TYPE then
+    if (car.lapCount or 0) > GRID_START_MAX_LAP_COUNT then
+      s.awaitingRaceStartExit = false
+      s.raceStartSpline = nil
+      return false
+    end
+
+    if s.awaitingRaceStartExit then
+      if s.raceStartSpline == nil then
+        s.raceStartSpline = spline
+      end
+
+      local leftGrid = splineDelta(spline, s.raceStartSpline) >= GRID_EXIT_SPLINE_DELTA
+      if leftGrid then
+        s.awaitingRaceStartExit = false
+        s.raceStartSpline = nil
+      else
+        return true
+      end
+    end
   end
 
   return false
@@ -126,6 +142,29 @@ local function resetState(s)
   s.messageKey = nil
 end
 
+local function updateRaceStartState(car, s)
+  local inRaceSession = sim.raceSessionType == RACE_SESSION_TYPE
+  local preStartLap = (car.lapCount or 0) <= GRID_START_MAX_LAP_COUNT
+
+  if not inRaceSession then
+    s.awaitingRaceStartExit = false
+    s.raceStartSpline = nil
+    s.seenRaceStartExit = false
+    return
+  end
+
+  if inRaceSession and preStartLap and not s.seenRaceStartExit then
+    s.awaitingRaceStartExit = true
+    return
+  end
+
+  if not preStartLap then
+    s.awaitingRaceStartExit = false
+    s.raceStartSpline = nil
+    s.seenRaceStartExit = true
+  end
+end
+
 function script.update(dt)
   if sim.carsCount <= 0 then return end
 
@@ -144,9 +183,13 @@ function script.update(dt)
     messageKey = nil,
     awaitingPitExit = false,
     respawnSpline = nil,
+    awaitingRaceStartExit = sim.raceSessionType == RACE_SESSION_TYPE,
+    raceStartSpline = nil,
+    seenRaceStartExit = false,
   }
 
   local s = state[i]
+  updateRaceStartState(car, s)
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
