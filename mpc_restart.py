@@ -22,9 +22,10 @@ STABLE_DISTANCE_M = 0.5
 STABLE_SAMPLE_COUNT = 8
 PLANNING_TMUX_PANE = "iac_ros2:0.4"
 PLANNING_TMUX_COMMAND = "ros2 launch robot_bringup planning.launch.py"
+TRAJECTORY_TMUX_PANE = "iac_ros2:0.6"
+TRAJECTORY_TMUX_COMMAND = "ros2 run trajectory_generator set_trajectory_node"
 PLANNING_RESTART_DELAY_S = 1.0
 PLANNING_STARTUP_DELAY_S = 2.0
-TRAJECTORY_COMMAND = ["ros2", "run", "trajectory_generator", "set_trajectory_node"]
 TRAJECTORY_SELECTION = "4"
 MANEUVER_SELECTION = "5"
 QOS_DEPTH = 1
@@ -117,33 +118,52 @@ class MpcRespawnMonitor(Node):
         self._last_stamp_s = None
 
     def _run_trajectory_command(self) -> None:
-        command_input = f"{TRAJECTORY_SELECTION}\n{MANEUVER_SELECTION}\n"
-
         try:
             self._restart_planning_stack()
-            completed = subprocess.run(
-                TRAJECTORY_COMMAND,
-                input=command_input,
+            subprocess.run(
+                ["tmux", "send-keys", "-t", TRAJECTORY_TMUX_PANE, "C-c"],
                 capture_output=True,
                 check=True,
                 text=True,
             )
-            if completed.stdout.strip():
-                self.get_logger().info(
-                    f"Trajectory command stdout: {completed.stdout.strip()}"
-                )
-            if completed.stderr.strip():
-                self.get_logger().warn(
-                    f"Trajectory command stderr: {completed.stderr.strip()}"
-                )
-        except subprocess.CalledProcessError as exc:
-            self.get_logger().error(
-                f"Trajectory command failed with code {exc.returncode}"
+            subprocess.run(
+                ["tmux", "send-keys", "-t", TRAJECTORY_TMUX_PANE, "C-u"],
+                capture_output=True,
+                check=True,
+                text=True,
             )
-            if exc.stdout.strip():
-                self.get_logger().error(f"command stdout: {exc.stdout.strip()}")
-            if exc.stderr.strip():
-                self.get_logger().error(f"command stderr: {exc.stderr.strip()}")
+            subprocess.run(
+                [
+                    "tmux",
+                    "send-keys",
+                    "-t",
+                    TRAJECTORY_TMUX_PANE,
+                    TRAJECTORY_TMUX_COMMAND,
+                    "Enter",
+                ],
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+            time.sleep(0.5)
+            subprocess.run(
+                [
+                    "tmux",
+                    "send-keys",
+                    "-t",
+                    TRAJECTORY_TMUX_PANE,
+                    TRAJECTORY_SELECTION,
+                    "Enter",
+                    MANEUVER_SELECTION,
+                    "Enter",
+                ],
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+            self.get_logger().info(
+                f"Sent trajectory command in tmux pane {TRAJECTORY_TMUX_PANE}."
+            )
         except Exception as exc:
             self.get_logger().error(f"Failed to run trajectory command: {exc}")
 
