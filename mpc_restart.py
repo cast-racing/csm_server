@@ -20,9 +20,15 @@ MAX_JUMP_DT_S = 0.1
 COMMAND_COOLDOWN_S = 10.0
 POST_COMMAND_IGNORE_S = 2.0
 PLANNING_STOP_COMMAND = ["pkill", "-f", "planning.launch.py"]
-PLANNING_START_COMMAND = ["ros2", "launch", "robot_bringup", "planning.launch.py"]
-PLANNING_RESTART_DELAY_S = 5.0
+PLANNING_MATCH_COMMAND = ["pgrep", "-af", "planning.launch.py"]
+PLANNING_START_COMMAND = (
+    'export LOCATION=${LOCATION:-"LAGUNA_SECA"} && '
+    "ros2 launch robot_bringup planning.launch.py"
+)
+PLANNING_RESTART_DELAY_S = 1.0
 PLANNING_STARTUP_DELAY_S = 2.0
+PLANNING_STOP_TIMEOUT_S = 10.0
+PLANNING_STOP_POLL_S = 0.5
 TRAJECTORY_COMMAND = ["ros2", "run", "trajectory_generator", "set_trajectory_node"]
 TRAJECTORY_SELECTION = "4"
 MANEUVER_SELECTION = "5"
@@ -143,21 +149,54 @@ class MpcRespawnMonitor(Node):
             self.get_logger().error(f"Failed to stop planning stack: {exc}")
 
         time.sleep(PLANNING_RESTART_DELAY_S)
+        self._wait_for_planning_stop()
 
         try:
-            subprocess.Popen(
-                PLANNING_START_COMMAND,
+            process = subprocess.Popen(
+                ["bash", "-lc", PLANNING_START_COMMAND],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 start_new_session=True,
                 env=os.environ.copy(),
+                text=True,
             )
+            time.sleep(0.5)
+            returncode = process.poll()
+            if returncode is not None:
+                stderr_output = process.stderr.read().strip() if process.stderr else ""
+                raise RuntimeError(
+                    f"planning.launch.py exited immediately with code {returncode}: "
+                    f"{stderr_output}"
+                )
+
             self.get_logger().info("Restarted planning.launch.py in the background.")
         except Exception as exc:
             raise RuntimeError(f"Failed to start planning stack: {exc}") from exc
 
         time.sleep(PLANNING_STARTUP_DELAY_S)
+
+    def _wait_for_planning_stop(self) -> None:
+        deadline = time.monotonic() + PLANNING_STOP_TIMEOUT_S
+        while time.monotonic() < deadline:
+            completed = subprocess.run(
+                PLANNING_MATCH_COMMAND,
+                capture_output=True,
+                text=True,
+            )
+            if completed.returncode == 1:
+                self.get_logger().info("Confirmed planning.launch.py has stopped.")
+                return
+            if completed.returncode != 0:
+                self.get_logger().warn(
+                    f"pgrep returned unexpected code {completed.returncode}: "
+                    f"{completed.stderr.strip()}"
+                )
+            time.sleep(PLANNING_STOP_POLL_S)
+
+        raise RuntimeError(
+            "Timed out waiting for planning.launch.py to stop before restart."
+        )
 
 
 def main() -> None:
