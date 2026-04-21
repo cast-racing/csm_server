@@ -17,7 +17,9 @@ local COOLDOWN = tweaksCfg.COOLDOWN
 local TARGET_CAR_INDEX = tweaksCfg.TARGET_CAR_INDEX
 local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
 
-local SPLINE_EPSILON = 0.0001
+local PROTECTED_EXIT_EPSILON = 0.0005
+local PROGRESS_EPSILON = 0.0001
+local PROGRESS_WINDOW = 0.5
 
 local function splineDelta(a, b)
   local d = math.abs((a or 0) - (b or 0))
@@ -40,18 +42,25 @@ local function respawnCar(carIndex)
 end
 
 local function isProgressing(car, s)
-  local spline = car.splinePosition or 0
+  s.clock = (s.clock or 0) + (s.lastDt or 0)
 
-  if not s.lastSpline then
-    s.lastSpline = spline
+  local spline = car.splinePosition or 0
+  local samples = s.progressSamples
+
+  samples[#samples + 1] = { t = s.clock, spline = spline }
+
+  local cutoff = s.clock - PROGRESS_WINDOW
+  while #samples > 1 and samples[1].t < cutoff do
+    table.remove(samples, 1)
+  end
+
+  if #samples < 2 then
     return true
   end
 
-  local d = splineDelta(spline, s.lastSpline)
+  local d = splineDelta(spline, samples[1].spline)
 
-  s.lastSpline = spline
-
-  return d >= SPLINE_EPSILON
+  return d >= PROGRESS_EPSILON
 end
 
 local function debugProgressText(s)
@@ -78,9 +87,10 @@ local function shouldIgnoreCrashReason(car, s, reason)
   if s.awaitingProtectedExit then
     if s.protectedSpline == nil then
       s.protectedSpline = spline
+      return true
     end
 
-    local leftProtectedSpot = splineDelta(spline, s.protectedSpline) >= SPLINE_EPSILON
+    local leftProtectedSpot = splineDelta(spline, s.protectedSpline) >= PROTECTED_EXIT_EPSILON
     if leftProtectedSpot then
       s.awaitingProtectedExit = false
       s.protectedSpline = nil
@@ -123,18 +133,25 @@ function script.update(dt)
   if not car or not car.isActive then return end
 
   state[i] = state[i] or {
-    lastSpline = nil,
+    clock = 0,
+    lastDt = 0,
+    progressSamples = {},
     isProgressing = true,
     reason = nil,
     remaining = TIME_THRESHOLD,
     cooldown = 0,
     messageKey = nil,
-    awaitingProtectedExit = true,
+    awaitingProtectedExit = false,
     protectedSpline = nil,
   }
 
   local s = state[i]
+  s.lastDt = dt
   s.isProgressing = isProgressing(car, s)
+
+  if s.awaitingProtectedExit and s.protectedSpline == nil then
+    s.protectedSpline = car.splinePosition or 0
+  end
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
