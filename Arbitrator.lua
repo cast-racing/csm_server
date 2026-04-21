@@ -54,6 +54,20 @@ local function isProgressing(car, s)
   return d >= SPLINE_EPSILON
 end
 
+local function debugProgressText(s)
+  return 'isProgressing=' .. tostring(s.isProgressing == true)
+end
+
+local function debugStatusText(car, s, reason)
+  local slow = (car.speedMs or 0) < MIN_SPEED
+  return table.concat({
+    debugProgressText(s),
+    'slow=' .. tostring(slow),
+    'protected=' .. tostring(s.awaitingProtectedExit == true),
+    'reason=' .. tostring(reason or 'none'),
+  }, ' | ')
+end
+
 local function shouldIgnoreCrashReason(car, s, reason)
   if reason ~= 'stalled' then
     return false
@@ -80,7 +94,7 @@ end
 
 local function getCrashReason(car, s)
   local slow = (car.speedMs or 0) < MIN_SPEED
-  if slow and not isProgressing(car, s) then
+  if slow and not s.isProgressing then
     return 'stalled'
   end
 
@@ -110,6 +124,7 @@ function script.update(dt)
 
   state[i] = state[i] or {
     lastSpline = nil,
+    isProgressing = true,
     reason = nil,
     remaining = TIME_THRESHOLD,
     cooldown = 0,
@@ -119,22 +134,26 @@ function script.update(dt)
   }
 
   local s = state[i]
+  s.isProgressing = isProgressing(car, s)
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
     s.cooldown = s.cooldown - dt
+    showMessage(s, 'Respawn Cooldown', debugStatusText(car, s, nil))
     resetState(s)
     return
   end
 
   local reason = getCrashReason(car, s)
   if reason and shouldIgnoreCrashReason(car, s, reason) then
+    showMessage(s, 'Respawn Debug', debugStatusText(car, s, reason))
     resetState(s)
     return
   end
 
   -- Car recovered: reset timer so the clock starts fresh on the next crash.
   if not reason then
+    showMessage(s, 'Respawn Debug', debugStatusText(car, s, nil))
     resetState(s)
     return
   end
@@ -149,13 +168,13 @@ function script.update(dt)
 
   if s.remaining <= 0 then
     respawnCar(i)
-    showMessage(s, 'Respawning car', 'Teleporting to pits')
+    showMessage(s, 'Respawning car', 'Teleporting to pits | ' .. debugStatusText(car, s, reason))
     s.cooldown = COOLDOWN
     s.awaitingProtectedExit = true
     s.protectedSpline = nil
     resetState(s)
   else
     local t = math.ceil(s.remaining)
-    showMessage(s, 'Restart in ' .. t .. 's', crashReasonText(reason))
+    showMessage(s, 'Restart in ' .. t .. 's', crashReasonText(reason) .. ' | ' .. debugStatusText(car, s, reason))
   end
 end
