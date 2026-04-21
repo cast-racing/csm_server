@@ -17,7 +17,9 @@ TOPIC = "/state/odom"
 DISTANCE_THRESHOLD_M = 5.0
 MAX_JUMP_DT_S = 0.1
 COMMAND_COOLDOWN_S = 10.0
-POST_COMMAND_IGNORE_S = 2.0
+POST_COMMAND_MIN_IGNORE_S = 2.0
+STABLE_DISTANCE_M = 0.5
+STABLE_SAMPLE_COUNT = 8
 PLANNING_TMUX_PANE = "iac_ros2:0.4"
 PLANNING_TMUX_COMMAND = "ros2 launch robot_bringup planning.launch.py"
 PLANNING_RESTART_DELAY_S = 1.0
@@ -36,6 +38,9 @@ class MpcRespawnMonitor(Node):
         self._last_stamp_s: Optional[float] = None
         self._last_command_time = 0.0
         self._ignore_jumps_until = 0.0
+        self._waiting_for_stable = False
+        self._stable_sample_count = 0
+        self._cooldown_jump_logged = False
 
         self._subscription = self.create_subscription(
             Odometry,
@@ -65,7 +70,24 @@ class MpcRespawnMonitor(Node):
         self._last_position = current
         self._last_stamp_s = stamp_s
 
-        if now < self._ignore_jumps_until:
+        if self._waiting_for_stable:
+            if now < self._ignore_jumps_until:
+                return
+
+            if dt <= 0.0 or dt > MAX_JUMP_DT_S:
+                self._stable_sample_count = 0
+                return
+
+            if distance <= STABLE_DISTANCE_M:
+                self._stable_sample_count += 1
+            else:
+                self._stable_sample_count = 0
+
+            if self._stable_sample_count >= STABLE_SAMPLE_COUNT:
+                self._waiting_for_stable = False
+                self._stable_sample_count = 0
+                self._cooldown_jump_logged = False
+                self.get_logger().info("Jump detection re-armed after odom stabilized.")
             return
 
         if dt <= 0.0 or dt > MAX_JUMP_DT_S:
@@ -74,9 +96,11 @@ class MpcRespawnMonitor(Node):
             return
 
         if now - self._last_command_time < COMMAND_COOLDOWN_S:
-            self.get_logger().warn(
-                f"Detected {distance:.2f} m jump but command is still in cooldown."
-            )
+            if not self._cooldown_jump_logged:
+                self.get_logger().warn(
+                    f"Detected {distance:.2f} m jump but command is still in cooldown."
+                )
+                self._cooldown_jump_logged = True
             return
 
         self.get_logger().warn(
@@ -85,7 +109,10 @@ class MpcRespawnMonitor(Node):
         )
         self._run_trajectory_command()
         self._last_command_time = now
-        self._ignore_jumps_until = now + POST_COMMAND_IGNORE_S
+        self._ignore_jumps_until = now + POST_COMMAND_MIN_IGNORE_S
+        self._waiting_for_stable = True
+        self._stable_sample_count = 0
+        self._cooldown_jump_logged = False
         self._last_position = None
         self._last_stamp_s = None
 
