@@ -77,29 +77,31 @@ local function debugStatusText(car, s, reason)
   }, ' | ')
 end
 
-local function shouldIgnoreCrashReason(car, s, reason)
-  if reason ~= 'stalled' then
-    return false
+local function updateProtectedExit(car, s)
+  if not s.awaitingProtectedExit then
+    return
   end
 
   local spline = car.splinePosition or 0
 
-  if s.awaitingProtectedExit then
-    if s.protectedSpline == nil then
-      s.protectedSpline = spline
-      return true
-    end
-
-    local leftProtectedSpot = splineDelta(spline, s.protectedSpline) >= PROTECTED_EXIT_EPSILON
-    if leftProtectedSpot then
-      s.awaitingProtectedExit = false
-      s.protectedSpline = nil
-    else
-      return true
-    end
+  if s.protectedSpline == nil then
+    s.protectedSpline = spline
+    return
   end
 
-  return false
+  local leftProtectedSpot = splineDelta(spline, s.protectedSpline) >= PROTECTED_EXIT_EPSILON
+  if leftProtectedSpot then
+    s.awaitingProtectedExit = false
+    s.protectedSpline = nil
+  end
+end
+
+local function shouldIgnoreCrashReason(s, reason)
+  if reason ~= 'stalled' then
+    return false
+  end
+
+  return s.awaitingProtectedExit == true
 end
 
 local function getCrashReason(car, s)
@@ -148,10 +150,7 @@ function script.update(dt)
   local s = state[i]
   s.lastDt = dt
   s.isProgressing = isProgressing(car, s)
-
-  if s.awaitingProtectedExit and s.protectedSpline == nil then
-    s.protectedSpline = car.splinePosition or 0
-  end
+  updateProtectedExit(car, s)
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
@@ -162,7 +161,7 @@ function script.update(dt)
   end
 
   local reason = getCrashReason(car, s)
-  if reason and shouldIgnoreCrashReason(car, s, reason) then
+  if reason and shouldIgnoreCrashReason(s, reason) then
     showMessage(s, 'Respawn Debug', debugStatusText(car, s, reason))
     resetState(s)
     return
