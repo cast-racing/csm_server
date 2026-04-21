@@ -17,7 +17,7 @@ local COOLDOWN = tweaksCfg.COOLDOWN
 local TARGET_CAR_INDEX = tweaksCfg.TARGET_CAR_INDEX
 local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
 
-local SPLINE_EPSILON = 0.0005
+local SPLINE_EPSILON = 0.0001
 
 local function splineDelta(a, b)
   local d = math.abs((a or 0) - (b or 0))
