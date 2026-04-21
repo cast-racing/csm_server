@@ -108,6 +108,7 @@ local function shouldIgnoreCrashReason(car, s, reason)
       if leftGrid then
         s.awaitingRaceStartExit = false
         s.raceStartSpline = nil
+        s.seenRaceStartExit = true
       else
         return true
       end
