@@ -89,7 +89,11 @@ local function updateProtectedExit(car, s)
     return
   end
 
-  local leftProtectedSpot = splineDelta(spline, s.protectedSpline) >= PROTECTED_EXIT_EPSILON
+  local movedAwayFromProtectedSpot = splineDelta(spline, s.protectedSpline) >= PROTECTED_EXIT_EPSILON
+  local speed = car.speedMs or 0
+  local moving = speed >= MIN_SPEED
+
+  local leftProtectedSpot = movedAwayFromProtectedSpot and moving
   if leftProtectedSpot then
     s.awaitingProtectedExit = false
     s.protectedSpline = nil
@@ -155,21 +159,21 @@ function script.update(dt)
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
     s.cooldown = s.cooldown - dt
-    showMessage(s, 'Respawn Cooldown', debugStatusText(car, s, nil))
+    -- showMessage(s, 'Respawn Cooldown', debugStatusText(car, s, nil))
     resetState(s)
     return
   end
 
   local reason = getCrashReason(car, s)
   if reason and shouldIgnoreCrashReason(s, reason) then
-    showMessage(s, 'Respawn Debug', debugStatusText(car, s, reason))
+    -- showMessage(s, 'Respawn Debug', debugStatusText(car, s, reason))
     resetState(s)
     return
   end
 
   -- Car recovered: reset timer so the clock starts fresh on the next crash.
   if not reason then
-    showMessage(s, 'Respawn Debug', debugStatusText(car, s, nil))
+    -- showMessage(s, 'Respawn Debug', debugStatusText(car, s, nil))
     resetState(s)
     return
   end
@@ -187,10 +191,14 @@ function script.update(dt)
     s.cooldown = COOLDOWN
     s.awaitingProtectedExit = true
     s.protectedSpline = nil
-    showMessage(s, 'Respawning car', 'Teleporting to pits | ' .. debugStatusText(car, s, reason))
+    s.clock = 0
+    s.lastDt = 0
+    s.progressSamples = {}
+    s.isProgressing = true
+    showMessage(s, 'Respawning car', 'Teleporting to pits')
     resetState(s)
   else
     local t = math.ceil(s.remaining)
-    showMessage(s, 'Restart in ' .. t .. 's', crashReasonText(reason) .. ' | ' .. debugStatusText(car, s, reason))
+    showMessage(s, 'Restart in ' .. t .. 's', crashReasonText(reason))
   end
 end
