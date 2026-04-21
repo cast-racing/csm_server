@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import math
+import os
 import subprocess
+import time
 from typing import Optional, Tuple
 
 import rclpy
@@ -13,9 +15,14 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 
 TOPIC = "/state/odom"
-DISTANCE_THRESHOLD_M = 2.0
+DISTANCE_THRESHOLD_M = 5.0
 MAX_JUMP_DT_S = 0.1
 COMMAND_COOLDOWN_S = 10.0
+POST_COMMAND_IGNORE_S = 2.0
+PLANNING_STOP_COMMAND = ["pkill", "-f", "planning.launch.py"]
+PLANNING_START_COMMAND = ["ros2", "launch", "robot_bringup", "planning.launch.py"]
+PLANNING_RESTART_DELAY_S = 1.0
+PLANNING_STARTUP_DELAY_S = 2.0
 TRAJECTORY_COMMAND = ["ros2", "run", "trajectory_generator", "set_trajectory_node"]
 TRAJECTORY_SELECTION = "4"
 MANEUVER_SELECTION = "5"
@@ -29,6 +36,7 @@ class MpcRespawnMonitor(Node):
         self._last_position: Optional[Tuple[float, float, float]] = None
         self._last_stamp_s: Optional[float] = None
         self._last_command_time = 0.0
+        self._ignore_jumps_until = 0.0
 
         self._subscription = self.create_subscription(
             Odometry,
@@ -46,6 +54,7 @@ class MpcRespawnMonitor(Node):
         pos = msg.pose.pose.position
         current = (float(pos.x), float(pos.y), float(pos.z))
         stamp_s = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        now = self.get_clock().now().nanoseconds * 1e-9
 
         if self._last_position is None or self._last_stamp_s is None:
             self._last_position = current
@@ -57,12 +66,14 @@ class MpcRespawnMonitor(Node):
         self._last_position = current
         self._last_stamp_s = stamp_s
 
+        if now < self._ignore_jumps_until:
+            return
+
         if dt <= 0.0 or dt > MAX_JUMP_DT_S:
             return
         if distance <= DISTANCE_THRESHOLD_M:
             return
 
-        now = self.get_clock().now().nanoseconds * 1e-9
         if now - self._last_command_time < COMMAND_COOLDOWN_S:
             self.get_logger().warn(
                 f"Detected {distance:.2f} m jump but command is still in cooldown."
@@ -75,11 +86,15 @@ class MpcRespawnMonitor(Node):
         )
         self._run_trajectory_command()
         self._last_command_time = now
+        self._ignore_jumps_until = now + POST_COMMAND_IGNORE_S
+        self._last_position = None
+        self._last_stamp_s = None
 
     def _run_trajectory_command(self) -> None:
         command_input = f"{TRAJECTORY_SELECTION}\n{MANEUVER_SELECTION}\n"
 
         try:
+            self._restart_planning_stack()
             completed = subprocess.run(
                 TRAJECTORY_COMMAND,
                 input=command_input,
@@ -105,6 +120,44 @@ class MpcRespawnMonitor(Node):
                 self.get_logger().error(f"command stderr: {exc.stderr.strip()}")
         except Exception as exc:
             self.get_logger().error(f"Failed to run trajectory command: {exc}")
+
+    def _restart_planning_stack(self) -> None:
+        self.get_logger().info("Restarting planning stack before sending trajectory command.")
+
+        try:
+            completed = subprocess.run(
+                PLANNING_STOP_COMMAND,
+                capture_output=True,
+                text=True,
+            )
+            if completed.returncode == 0:
+                self.get_logger().info("Stopped existing planning.launch.py process.")
+            elif completed.returncode == 1:
+                self.get_logger().warn("No existing planning.launch.py process was running.")
+            else:
+                self.get_logger().warn(
+                    f"Planning stop command exited with code {completed.returncode}: "
+                    f"{completed.stderr.strip()}"
+                )
+        except Exception as exc:
+            self.get_logger().error(f"Failed to stop planning stack: {exc}")
+
+        time.sleep(PLANNING_RESTART_DELAY_S)
+
+        try:
+            subprocess.Popen(
+                PLANNING_START_COMMAND,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=os.environ.copy(),
+            )
+            self.get_logger().info("Restarted planning.launch.py in the background.")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to start planning stack: {exc}") from exc
+
+        time.sleep(PLANNING_STARTUP_DELAY_S)
 
 
 def main() -> None:
