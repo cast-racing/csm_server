@@ -17,8 +17,8 @@ DISTANCE_THRESHOLD_M = 2.0
 MAX_JUMP_DT_S = 0.1
 COMMAND_COOLDOWN_S = 10.0
 TRAJECTORY_COMMAND = ["ros2", "run", "trajectory_generator", "set_trajectory_node"]
-TRAJECTORY_SELECTION = ""
-MANEUVER_SELECTION = "6"
+TRAJECTORY_SELECTION = "4"
+MANEUVER_SELECTION = "5"
 QOS_DEPTH = 1
 
 
@@ -38,10 +38,8 @@ class MpcRespawnMonitor(Node):
         )
 
         self.get_logger().info(
-            "Watching %s for jumps > %.2f m within %.3f s",
-            TOPIC,
-            DISTANCE_THRESHOLD_M,
-            MAX_JUMP_DT_S,
+            f"Watching {TOPIC} for jumps > {DISTANCE_THRESHOLD_M:.2f} m "
+            f"within {MAX_JUMP_DT_S:.3f} s"
         )
 
     def _odom_callback(self, msg: Odometry) -> None:
@@ -67,16 +65,13 @@ class MpcRespawnMonitor(Node):
         now = self.get_clock().now().nanoseconds * 1e-9
         if now - self._last_command_time < COMMAND_COOLDOWN_S:
             self.get_logger().warn(
-                "Detected %.2f m jump but command is still in cooldown.",
-                distance,
+                f"Detected {distance:.2f} m jump but command is still in cooldown."
             )
             return
 
         self.get_logger().warn(
-            "Detected %.2f m jump on %s in %.3f s; sending FROM PIT trajectory command.",
-            distance,
-            TOPIC,
-            dt,
+            f"Detected {distance:.2f} m jump on {TOPIC} in {dt:.3f} s; "
+            "sending FROM PIT trajectory command."
         )
         self._run_trajectory_command()
         self._last_command_time = now
@@ -93,17 +88,23 @@ class MpcRespawnMonitor(Node):
                 text=True,
             )
             if completed.stdout.strip():
-                self.get_logger().info("Trajectory command stdout: %s", completed.stdout.strip())
+                self.get_logger().info(
+                    f"Trajectory command stdout: {completed.stdout.strip()}"
+                )
             if completed.stderr.strip():
-                self.get_logger().warn("Trajectory command stderr: %s", completed.stderr.strip())
+                self.get_logger().warn(
+                    f"Trajectory command stderr: {completed.stderr.strip()}"
+                )
         except subprocess.CalledProcessError as exc:
-            self.get_logger().error("Trajectory command failed with code %s", exc.returncode)
+            self.get_logger().error(
+                f"Trajectory command failed with code {exc.returncode}"
+            )
             if exc.stdout.strip():
-                self.get_logger().error("command stdout: %s", exc.stdout.strip())
+                self.get_logger().error(f"command stdout: {exc.stdout.strip()}")
             if exc.stderr.strip():
-                self.get_logger().error("command stderr: %s", exc.stderr.strip())
+                self.get_logger().error(f"command stderr: {exc.stderr.strip()}")
         except Exception as exc:
-            self.get_logger().error("Failed to run trajectory command: %s", exc)
+            self.get_logger().error(f"Failed to run trajectory command: {exc}")
 
 
 def main() -> None:
