@@ -184,10 +184,10 @@ function script.update(dt)
 
   if s.remaining <= 0 then
     respawnCar(i)
-    showMessage(s, 'Respawning car', 'Teleporting to pits | ' .. debugStatusText(car, s, reason))
     s.cooldown = COOLDOWN
     s.awaitingProtectedExit = true
     s.protectedSpline = nil
+    showMessage(s, 'Respawning car', 'Teleporting to pits | ' .. debugStatusText(car, s, reason))
     resetState(s)
   else
     local t = math.ceil(s.remaining)
