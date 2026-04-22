@@ -18,6 +18,7 @@ local TARGET_CAR_INDEX = tweaksCfg.TARGET_CAR_INDEX
 local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
 
 local PROTECTED_EXIT_EPSILON = 0.0005
+local PROTECTED_ANCHOR_DELAY = 0.1
 local PROGRESS_EPSILON = 0.0001
 local PROGRESS_WINDOW = 0.5
 
@@ -88,8 +89,13 @@ local function debugStatusText(car, s, reason)
   }, ' | ')
 end
 
-local function updateProtectedExit(car, s)
+local function updateProtectedExit(car, s, dt)
   if not s.awaitingProtectedExit then
+    return
+  end
+
+  if (s.protectedAnchorDelay or 0) > 0 then
+    s.protectedAnchorDelay = math.max(0, s.protectedAnchorDelay - (dt or 0))
     return
   end
 
@@ -154,14 +160,15 @@ function script.update(dt)
     remaining = TIME_THRESHOLD,
     cooldown = 0,
     messageKey = nil,
-    awaitingProtectedExit = false,
-    protectedSpline = nil,
+    awaitingProtectedExit = true,
+    protectedAnchorDelay = 0,
+    protectedSpline = car.splinePosition or 0,
   }
 
   local s = state[i]
   s.lastDt = dt
   s.isProgressing = isProgressing(car, s)
-  updateProtectedExit(car, s)
+  updateProtectedExit(car, s, dt)
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
@@ -197,6 +204,7 @@ function script.update(dt)
     respawnCar(i)
     s.cooldown = COOLDOWN
     s.awaitingProtectedExit = true
+    s.protectedAnchorDelay = PROTECTED_ANCHOR_DELAY
     s.protectedSpline = nil
     s.clock = 0
     s.lastDt = 0
