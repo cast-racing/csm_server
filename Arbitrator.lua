@@ -64,31 +64,6 @@ local function isProgressing(car, s)
   return d >= PROGRESS_EPSILON
 end
 
-local function debugProgressText(s)
-  return 'isProgressing=' .. tostring(s.isProgressing == true)
-end
-
-local function debugProtectedDeltaText(car, s)
-  if s.protectedSpline == nil then
-    return 'protectedDelta=nil'
-  end
-
-  local spline = car.splinePosition or 0
-  local d = splineDelta(spline, s.protectedSpline)
-  return string.format('protectedDelta=%.6f', d)
-end
-
-local function debugStatusText(car, s, reason)
-  local slow = (car.speedMs or 0) < MIN_SPEED
-  return table.concat({
-    debugProgressText(s),
-    'slow=' .. tostring(slow),
-    'protected=' .. tostring(s.awaitingProtectedExit == true),
-    debugProtectedDeltaText(car, s),
-    'reason=' .. tostring(reason or 'none'),
-  }, ' | ')
-end
-
 local function updateProtectedExit(car, s, dt)
   if not s.awaitingProtectedExit then
     return
@@ -113,14 +88,6 @@ local function updateProtectedExit(car, s, dt)
   end
 end
 
-local function shouldIgnoreCrashReason(s, reason)
-  if reason ~= 'stalled' then
-    return false
-  end
-
-  return s.awaitingProtectedExit == true
-end
-
 local function getCrashReason(car, s)
   local slow = (car.speedMs or 0) < MIN_SPEED
   if slow and not s.isProgressing then
@@ -130,13 +97,7 @@ local function getCrashReason(car, s)
   return nil
 end
 
-local function crashReasonText(reason)
-  if reason == 'stalled' then return 'Stalled' end
-  return 'Crash condition'
-end
-
 local function resetState(s)
-  s.reason = nil
   s.remaining = TIME_THRESHOLD
   s.messageKey = nil
 end
@@ -156,7 +117,6 @@ function script.update(dt)
     lastDt = 0,
     progressSamples = {},
     isProgressing = true,
-    reason = nil,
     remaining = TIME_THRESHOLD,
     cooldown = 0,
     messageKey = nil,
@@ -173,29 +133,20 @@ function script.update(dt)
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
     s.cooldown = s.cooldown - dt
-    showMessage(s, 'Respawn Cooldown', debugStatusText(car, s, nil))
     resetState(s)
     return
   end
 
   local reason = getCrashReason(car, s)
-  if reason and shouldIgnoreCrashReason(s, reason) then
-    showMessage(s, 'Respawn Debug', debugStatusText(car, s, reason))
+  if reason == 'stalled' and s.awaitingProtectedExit then
     resetState(s)
     return
   end
 
   -- Car recovered: reset timer so the clock starts fresh on the next crash.
   if not reason then
-    showMessage(s, 'Respawn Debug', debugStatusText(car, s, nil))
     resetState(s)
     return
-  end
-
-  -- Crash condition changed: reset timer and accumulate from zero again.
-  if s.reason ~= reason then
-    s.reason = reason
-    s.remaining = TIME_THRESHOLD
   end
 
   s.remaining = math.max(0, s.remaining - dt)
@@ -210,10 +161,10 @@ function script.update(dt)
     s.lastDt = 0
     s.progressSamples = {}
     s.isProgressing = true
-    showMessage(s, 'Respawning car', 'Teleporting to pits | ' .. debugStatusText(car, s, reason))
+    showMessage(s, 'Respawning car', 'Teleporting to pits')
     resetState(s)
   else
     local t = math.ceil(s.remaining)
-    showMessage(s, 'Restart in ' .. t .. 's', crashReasonText(reason) .. ' | ' .. debugStatusText(car, s, reason))
+    showMessage(s, 'Restart in ' .. t .. 's', 'Stalled')
   end
 end
