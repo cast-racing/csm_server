@@ -195,10 +195,9 @@ function script.update(dt)
 
   if s.remaining <= 0 then
     respawnCar(i)
-    local respawnedCar = ac.getCar(i) or car
     s.cooldown = COOLDOWN
     s.awaitingProtectedExit = true
-    s.protectedSpline = respawnedCar.splinePosition or car.splinePosition or 0
+    s.protectedSpline = nil
     s.clock = 0
     s.lastDt = 0
     s.progressSamples = {}
