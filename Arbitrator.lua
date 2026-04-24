@@ -111,6 +111,9 @@ local function resetState(s)
 end
 
 function script.update(dt)
+  function script.update(dt)
+    ac.setMessage('Arbitrator', 'update running ' .. tostring(math.floor((sim.time or 0) * 10)))
+
   if sim.carsCount <= 0 then return end
 
   local i = TARGET_CAR_INDEX
@@ -148,7 +151,6 @@ function script.update(dt)
     if car.lapCount ~= nil then
       if car.lapCount > s.startLapCount then
         s.firstLapDone = true
-        ac.debug('Arbitrator','first lap detected via lapCount for index '..tostring(i)..' lap='..tostring(lap))
       end
     end
   end
