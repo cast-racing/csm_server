@@ -5,15 +5,19 @@ local tweaksCfg = extrasCfg and extrasCfg:mapSection('EXTRA_TWEAKS', {
   TARGET_CAR_INDEX = -1,
   TIME_THRESHOLD = 5.0,
   COOLDOWN = 10.0,
+  FIRST_LAP_SPEED_LIMIT = 120.0,
+  FIRST_LAP_BRAKE_FORCE = 1.0,
 }) or {
   TARGET_CAR_INDEX = -1,
   TIME_THRESHOLD = 5.0,
   COOLDOWN = 10.0,
+  FIRST_LAP_SPEED_LIMIT = 120.0,
+  FIRST_LAP_BRAKE_FORCE = 1.0,
 }
 
--- First-lap speed limiter defaults (km/h)
-local FIRST_LAP_SPEED_LIMIT = 120.0
-local FIRST_LAP_BRAKE_FORCE = 0
+-- First-lap speed limiter (from config)
+local FIRST_LAP_SPEED_LIMIT = tweaksCfg.FIRST_LAP_SPEED_LIMIT or 120.0
+local FIRST_LAP_BRAKE_FORCE = tweaksCfg.FIRST_LAP_BRAKE_FORCE or 1.0
 
 local MIN_SPEED = 2.0 / 3.6   -- ~2 km/h
 local TIME_THRESHOLD = tweaksCfg.TIME_THRESHOLD
@@ -128,7 +132,6 @@ function script.update(dt)
     protectedAnchorDelay = 0,
     protectedSpline = car.splinePosition or 0,
     firstLapDone = false,
-    prevSpline = car.splinePosition or 0,
     startLapCount = car.lapCount,
   }
 
@@ -137,9 +140,7 @@ function script.update(dt)
   s.isProgressing = isProgressing(car, s)
   updateProtectedExit(car, s, dt)
 
-  -- detect first lap completion: prefer explicit `car.lapCount` if available,
-  -- otherwise fall back to spline wrap heuristic.
-  local spline = car.splinePosition or 0
+  -- detect first lap completion
   if not s.firstLapDone then
     if car.lapCount ~= nil then
       local lap = car.lapCount or 0
@@ -147,14 +148,7 @@ function script.update(dt)
         s.firstLapDone = true
         ac.debug('Arbitrator','first lap detected via lapCount for index '..tostring(i)..' lap='..tostring(lap))
       end
-    else
-      if s.prevSpline and s.prevSpline > 0.9 and spline < 0.1 then
-        s.firstLapDone = true
-        ac.debug('Arbitrator','first lap detected via spline wrap for index '..tostring(i))
-      end
-    end
   end
-  s.prevSpline = spline
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
@@ -173,9 +167,14 @@ function script.update(dt)
   -- and only when the car is not currently stalled/crashed.
   if not s.firstLapDone and reason == nil then
     local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
+    ac.debug('Arbitrator','index='..tostring(i)..' lapCount='..tostring(car.lapCount)..' firstLapDone='..tostring(s.firstLapDone)..' speed='..tostring(speedKmh))
+    if FIRST_LAP_BRAKE_FORCE == 0 then
+      ac.debug('Arbitrator','WARNING: FIRST_LAP_BRAKE_FORCE is 0; no braking will be applied')
+    end
     if speedKmh and speedKmh > FIRST_LAP_SPEED_LIMIT then
       physics.forceUserBrakesFor(0.1, FIRST_LAP_BRAKE_FORCE)
       physics.forceUserThrottleFor(0.1, 0)
+      ac.debug('Arbitrator','applying speed cap, speed='..tostring(speedKmh)..' limit='..tostring(FIRST_LAP_SPEED_LIMIT)..' brake='..tostring(FIRST_LAP_BRAKE_FORCE))
       showMessage(s, 'Speed cap active', 'First lap limited to ' .. tostring(FIRST_LAP_SPEED_LIMIT) .. ' km/h')
     end
   end
