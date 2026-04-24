@@ -1,128 +1,86 @@
-local state = {}
+local carStates = {}
 
-local extrasCfg = ac.INIConfig.onlineExtras()
-local tweaksCfg = extrasCfg and extrasCfg:mapSection('EXTRA_TWEAKS', {
+local CONFIG_DEFAULTS = {
   TARGET_CAR_INDEX = -1,
   TIME_THRESHOLD = 5.0,
   COOLDOWN = 10.0,
   FIRST_LAP_SPEED_LIMIT = 100.0,
   FIRST_LAP_BRAKE_FORCE = 1.0,
-}) or {
-  TARGET_CAR_INDEX = -1,
-  TIME_THRESHOLD = 5.0,
-  COOLDOWN = 10.0,
-  FIRST_LAP_SPEED_LIMIT = 100.0,
-  FIRST_LAP_BRAKE_FORCE = 100.0,
 }
 
--- First-lap speed limiter (from config)
-local FIRST_LAP_SPEED_LIMIT = tweaksCfg.FIRST_LAP_SPEED_LIMIT or 100.0
-local FIRST_LAP_BRAKE_FORCE = tweaksCfg.FIRST_LAP_BRAKE_FORCE or 1.0
-
-local MIN_SPEED = 2.0 / 3.6   -- ~2 km/h
-local TIME_THRESHOLD = tweaksCfg.TIME_THRESHOLD
-local COOLDOWN = tweaksCfg.COOLDOWN
-local TARGET_CAR_INDEX = tweaksCfg.TARGET_CAR_INDEX
-local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
-
+local MIN_SPEED_MS = 2.0 / 3.6
 local PROTECTED_EXIT_EPSILON = 0.0005
 local PROTECTED_ANCHOR_DELAY = 0.1
 local PROGRESS_EPSILON = 0.0001
 local PROGRESS_WINDOW = 0.5
+local RESPAWN_SPAWN_SET = ac.SpawnSet.Pits
+
+local function copyTable(source)
+  local copy = {}
+  for key, value in pairs(source) do
+    copy[key] = value
+  end
+  return copy
+end
+
+local function loadTweaksConfig()
+  local extrasCfg = ac.INIConfig.onlineExtras()
+  if not extrasCfg then
+    return copyTable(CONFIG_DEFAULTS)
+  end
+
+  return extrasCfg:mapSection('EXTRA_TWEAKS', copyTable(CONFIG_DEFAULTS))
+end
+
+local tweaksCfg = loadTweaksConfig()
+local TARGET_CAR_INDEX = tweaksCfg.TARGET_CAR_INDEX
+local TIME_THRESHOLD = tweaksCfg.TIME_THRESHOLD
+local COOLDOWN = tweaksCfg.COOLDOWN
+local FIRST_LAP_SPEED_LIMIT = tweaksCfg.FIRST_LAP_SPEED_LIMIT
+local FIRST_LAP_BRAKE_FORCE = tweaksCfg.FIRST_LAP_BRAKE_FORCE
 
 local function splineDelta(a, b)
-  local d = math.abs((a or 0) - (b or 0))
-  if d > 0.5 then
-    d = 1.0 - d
+  local delta = math.abs((a or 0) - (b or 0))
+  if delta > 0.5 then
+    return 1.0 - delta
   end
-  return d
+  return delta
 end
 
-local function showMessage(s, title, subtitle)
+local function showMessage(state, title, subtitle)
   local key = title .. '\n' .. subtitle
-  if s.messageKey == key then return end
+  if state.messageKey == key then
+    return
+  end
 
   ac.setMessage(title, subtitle)
-  s.messageKey = key
+  state.messageKey = key
 end
 
-local function respawnCar(carIndex)
-  physics.teleportCarTo(carIndex, RESPAWN_SPAWN_SET)
+local function getSpeedKmh(car)
+  return car.speedKmh or ((car.speedMs or 0) * 3.6)
 end
 
-local function isProgressing(car, s)
-  s.clock = (s.clock or 0) + (s.lastDt or 0)
-
-  local spline = car.splinePosition or 0
-  local samples = s.progressSamples
-
-  samples[#samples + 1] = { t = s.clock, spline = spline }
-
-  local cutoff = s.clock - PROGRESS_WINDOW
-  while #samples > 1 and samples[1].t < cutoff do
-    table.remove(samples, 1)
+local function resolveCarIndex()
+  if sim.carsCount <= 0 then
+    return nil
   end
 
-  if #samples < 2 then
-    return true
+  local targetIndex = TARGET_CAR_INDEX
+  if targetIndex < 0 then
+    targetIndex = carIndex or 0
   end
 
-  local d = splineDelta(spline, samples[1].spline)
+  if targetIndex >= sim.carsCount then
+    return nil
+  end
 
-  return d >= PROGRESS_EPSILON
+  return targetIndex
 end
 
-local function updateProtectedExit(car, s, dt)
-  if not s.awaitingProtectedExit then
-    return
-  end
-
-  if (s.protectedAnchorDelay or 0) > 0 then
-    s.protectedAnchorDelay = math.max(0, s.protectedAnchorDelay - (dt or 0))
-    return
-  end
-
-  local spline = car.splinePosition or 0
-
-  if s.protectedSpline == nil then
-    s.protectedSpline = spline
-    return
-  end
-
-  local movedAwayFromProtectedSpot = splineDelta(spline, s.protectedSpline) >= PROTECTED_EXIT_EPSILON
-  if movedAwayFromProtectedSpot then
-    s.awaitingProtectedExit = false
-    s.protectedSpline = nil
-  end
-end
-
-local function getCrashReason(car, s)
-  local slow = (car.speedMs or 0) < MIN_SPEED
-  if slow and not s.isProgressing then
-    return 'stalled'
-  end
-
-  return nil
-end
-
-local function resetState(s)
-  s.remaining = TIME_THRESHOLD
-  s.messageKey = nil
-end
-
-function script.update(dt)
-  if sim.carsCount <= 0 then return end
-
-  local i = TARGET_CAR_INDEX
-  if i < 0 then i = carIndex or 0 end
-  if i >= sim.carsCount then return end
-
-  local car = ac.getCar(i)
-  if not car or not car.isActive then return end
-
-  state[i] = state[i] or {
+local function createCarState(car)
+  return {
     clock = 0,
-    lastDt = 0,
     progressSamples = {},
     isProgressing = true,
     remaining = TIME_THRESHOLD,
@@ -134,68 +92,156 @@ function script.update(dt)
     firstLapDone = false,
     startLapCount = car.lapCount,
   }
+end
 
-  local s = state[i]
-  s.lastDt = dt
-  s.isProgressing = isProgressing(car, s)
-  updateProtectedExit(car, s, dt)
+local function getCarState(carIndex, car)
+  carStates[carIndex] = carStates[carIndex] or createCarState(car)
+  return carStates[carIndex]
+end
 
-  -- detect first lap completion
-  if not s.firstLapDone then
-    if car.lapCount ~= nil then
-      if car.lapCount > s.startLapCount then
-        s.firstLapDone = true
-      end
-    end
+local function resetRecoveryTimer(state)
+  state.remaining = TIME_THRESHOLD
+  state.messageKey = nil
+end
+
+local function resetProgressTracking(state)
+  state.clock = 0
+  state.progressSamples = {}
+  state.isProgressing = true
+end
+
+local function armProtectedExit(state)
+  state.awaitingProtectedExit = true
+  state.protectedAnchorDelay = PROTECTED_ANCHOR_DELAY
+  state.protectedSpline = nil
+end
+
+local function clearProtectedExit(state)
+  state.awaitingProtectedExit = false
+  state.protectedSpline = nil
+end
+
+local function updateProgressState(car, state, dt)
+  state.clock = state.clock + dt
+
+  local spline = car.splinePosition or 0
+  local samples = state.progressSamples
+  samples[#samples + 1] = { t = state.clock, spline = spline }
+
+  local cutoff = state.clock - PROGRESS_WINDOW
+  while #samples > 1 and samples[1].t < cutoff do
+    table.remove(samples, 1)
   end
 
-  -- Cooldown (prevents restart spam loop)
-  if s.cooldown > 0 then
-    s.cooldown = s.cooldown - dt
-    resetState(s)
+  if #samples < 2 then
+    state.isProgressing = true
     return
   end
 
-  local reason = getCrashReason(car, s)
-  if reason == 'stalled' and s.awaitingProtectedExit then
-    resetState(s)
+  state.isProgressing = splineDelta(spline, samples[1].spline) >= PROGRESS_EPSILON
+end
+
+local function updateProtectedExit(car, state, dt)
+  if not state.awaitingProtectedExit then
     return
   end
 
-  -- First-lap speed limiter
-  if not s.firstLapDone and reason == nil then
-    local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
-    if speedKmh and speedKmh > FIRST_LAP_SPEED_LIMIT then
-      physics.forceUserBrakesFor(0.5, FIRST_LAP_BRAKE_FORCE)
-      physics.forceUserThrottleFor(0.5, 0)
-      showMessage(s, 'BRAKING APPLIED', 'speed=' .. tostring(math.floor(speedKmh)) .. ' brake=' .. tostring(FIRST_LAP_BRAKE_FORCE))
-    end
-  else
-    showMessage(s, 'SpeedLimiter SKIPPED', 'firstLapDone=' .. tostring(s.firstLapDone) .. ' reason=' .. tostring(reason))
-  end
-
-  -- Car recovered: reset timer so the clock starts fresh on the next crash.
-  if not reason then
-    resetState(s)
+  if state.protectedAnchorDelay > 0 then
+    state.protectedAnchorDelay = math.max(0, state.protectedAnchorDelay - dt)
     return
   end
 
-  s.remaining = math.max(0, s.remaining - dt)
-
-  if s.remaining <= 0 then
-    respawnCar(i)
-    s.cooldown = COOLDOWN
-    s.awaitingProtectedExit = true
-    s.protectedAnchorDelay = PROTECTED_ANCHOR_DELAY
-    s.protectedSpline = nil
-    s.clock = 0
-    s.lastDt = 0
-    s.progressSamples = {}
-    s.isProgressing = true
-    showMessage(s, 'Respawning car', 'Teleporting to pits')
-    resetState(s)
-  else
-    local t = math.ceil(s.remaining)
-    showMessage(s, 'Restart in ' .. t .. 's', 'Stalled')
+  local spline = car.splinePosition or 0
+  if state.protectedSpline == nil then
+    state.protectedSpline = spline
+    return
   end
+
+  if splineDelta(spline, state.protectedSpline) >= PROTECTED_EXIT_EPSILON then
+    clearProtectedExit(state)
+  end
+end
+
+local function updateFirstLapState(car, state)
+  if state.startLapCount == nil and car.lapCount ~= nil then
+    state.startLapCount = car.lapCount
+  end
+
+  if state.firstLapDone or car.lapCount == nil or state.startLapCount == nil then
+    return
+  end
+
+  if car.lapCount > state.startLapCount then
+    state.firstLapDone = true
+  end
+end
+
+local function isStalled(car, state)
+  return (car.speedMs or 0) < MIN_SPEED_MS and not state.isProgressing
+end
+
+local function enforceFirstLapSpeedLimit(car, state)
+  if state.firstLapDone then
+    return
+  end
+
+  if getSpeedKmh(car) <= FIRST_LAP_SPEED_LIMIT then
+    return
+  end
+
+  physics.forceUserBrakesFor(0.5, FIRST_LAP_BRAKE_FORCE)
+  physics.forceUserThrottleFor(0.5, 0)
+  showMessage(state, 'BRAKING APPLIED', 'Lap 1 capped at ' .. tostring(math.floor(FIRST_LAP_SPEED_LIMIT)) .. ' km/h')
+end
+
+local function respawnCar(carIndex, state)
+  physics.teleportCarTo(carIndex, RESPAWN_SPAWN_SET)
+  state.cooldown = COOLDOWN
+  armProtectedExit(state)
+  resetProgressTracking(state)
+  showMessage(state, 'Respawning car', 'Teleporting to pits')
+  resetRecoveryTimer(state)
+end
+
+function script.update(dt)
+  local targetIndex = resolveCarIndex()
+  if targetIndex == nil then
+    return
+  end
+
+  local car = ac.getCar(targetIndex)
+  if not car or not car.isActive then
+    return
+  end
+
+  local carState = getCarState(targetIndex, car)
+  updateProgressState(car, carState, dt)
+  updateProtectedExit(car, carState, dt)
+  updateFirstLapState(car, carState)
+
+  if carState.cooldown > 0 then
+    carState.cooldown = math.max(0, carState.cooldown - dt)
+    resetRecoveryTimer(carState)
+    return
+  end
+
+  local stalled = isStalled(car, carState)
+  if stalled and carState.awaitingProtectedExit then
+    resetRecoveryTimer(carState)
+    return
+  end
+
+  if not stalled then
+    enforceFirstLapSpeedLimit(car, carState)
+    resetRecoveryTimer(carState)
+    return
+  end
+
+  carState.remaining = math.max(0, carState.remaining - dt)
+  if carState.remaining <= 0 then
+    respawnCar(targetIndex, carState)
+    return
+  end
+
+  showMessage(carState, 'Restart in ' .. tostring(math.ceil(carState.remaining)) .. 's', 'Stalled')
 end
