@@ -11,6 +11,10 @@ local tweaksCfg = extrasCfg and extrasCfg:mapSection('EXTRA_TWEAKS', {
   COOLDOWN = 10.0,
 }
 
+-- First-lap speed limiter defaults (km/h)
+local FIRST_LAP_SPEED_LIMIT = 120.0
+local FIRST_LAP_BRAKE_FORCE = 0
+
 local MIN_SPEED = 2.0 / 3.6   -- ~2 km/h
 local TIME_THRESHOLD = tweaksCfg.TIME_THRESHOLD
 local COOLDOWN = tweaksCfg.COOLDOWN
@@ -123,12 +127,21 @@ function script.update(dt)
     awaitingProtectedExit = true,
     protectedAnchorDelay = 0,
     protectedSpline = car.splinePosition or 0,
+    firstLapDone = false,
+    prevSpline = car.splinePosition or 0,
   }
 
   local s = state[i]
   s.lastDt = dt
   s.isProgressing = isProgressing(car, s)
   updateProtectedExit(car, s, dt)
+
+  -- detect first lap completion by watching spline wrap (near 1.0 -> near 0.0)
+  local spline = car.splinePosition or 0
+  if not s.firstLapDone and s.prevSpline and s.prevSpline > 0.9 and spline < 0.1 then
+    s.firstLapDone = true
+  end
+  s.prevSpline = spline
 
   -- Cooldown (prevents restart spam loop)
   if s.cooldown > 0 then
@@ -141,6 +154,17 @@ function script.update(dt)
   if reason == 'stalled' and s.awaitingProtectedExit then
     resetState(s)
     return
+  end
+
+  -- First-lap speed limiter: apply only while first lap not yet completed
+  -- and only when the car is not currently stalled/crashed.
+  if not s.firstLapDone and reason == nil then
+    local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
+    if speedKmh and speedKmh > FIRST_LAP_SPEED_LIMIT then
+      physics.forceUserBrakesFor(0.1, FIRST_LAP_BRAKE_FORCE)
+      physics.forceUserThrottleFor(0.1, 0)
+      showMessage(s, 'Speed cap active', 'First lap limited to ' .. tostring(FIRST_LAP_SPEED_LIMIT) .. ' km/h')
+    end
   end
 
   -- Car recovered: reset timer so the clock starts fresh on the next crash.
