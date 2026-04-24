@@ -138,6 +138,7 @@ function script.update(dt)
   updateProtectedExit(car, s, dt)
 
   -- detect first lap completion: prefer explicit `car.lapCount` if available,
+  -- otherwise fall back to spline wrap heuristic.
   local spline = car.splinePosition or 0
   if not s.firstLapDone then
     if car.lapCount ~= nil then
@@ -146,6 +147,12 @@ function script.update(dt)
         s.firstLapDone = true
         ac.debug('Arbitrator','first lap detected via lapCount for index '..tostring(i)..' lap='..tostring(lap))
       end
+    else
+      if s.prevSpline and s.prevSpline > 0.9 and spline < 0.1 then
+        s.firstLapDone = true
+        ac.debug('Arbitrator','first lap detected via spline wrap for index '..tostring(i))
+      end
+    end
   end
   s.prevSpline = spline
 
