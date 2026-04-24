@@ -140,11 +140,14 @@ function script.update(dt)
   s.isProgressing = isProgressing(car, s)
   updateProtectedExit(car, s, dt)
 
+  -- debug line
+  ac.debug('Arbitrator', 'init lapCount=' .. tostring(car.lapCount) .. ' startLap=' .. tostring(s.startLapCount))
+
   -- detect first lap completion
   if not s.firstLapDone then
     if car.lapCount ~= nil then
       local lap = car.lapCount or 0
-      if lap >= 1 then
+      if lap > s.startLapCount then
         s.firstLapDone = true
         ac.debug('Arbitrator','first lap detected via lapCount for index '..tostring(i)..' lap='..tostring(lap))
       end
