@@ -5,18 +5,18 @@ local tweaksCfg = extrasCfg and extrasCfg:mapSection('EXTRA_TWEAKS', {
   TARGET_CAR_INDEX = -1,
   TIME_THRESHOLD = 5.0,
   COOLDOWN = 10.0,
-  FIRST_LAP_SPEED_LIMIT = 120.0,
+  FIRST_LAP_SPEED_LIMIT = 100.0,
   FIRST_LAP_BRAKE_FORCE = 1.0,
 }) or {
   TARGET_CAR_INDEX = -1,
   TIME_THRESHOLD = 5.0,
   COOLDOWN = 10.0,
-  FIRST_LAP_SPEED_LIMIT = 120.0,
+  FIRST_LAP_SPEED_LIMIT = 100.0,
   FIRST_LAP_BRAKE_FORCE = 1.0,
 }
 
 -- First-lap speed limiter (from config)
-local FIRST_LAP_SPEED_LIMIT = tweaksCfg.FIRST_LAP_SPEED_LIMIT or 120.0
+local FIRST_LAP_SPEED_LIMIT = tweaksCfg.FIRST_LAP_SPEED_LIMIT or 100.0
 local FIRST_LAP_BRAKE_FORCE = tweaksCfg.FIRST_LAP_BRAKE_FORCE or 1.0
 
 local MIN_SPEED = 2.0 / 3.6   -- ~2 km/h
@@ -146,8 +146,7 @@ function script.update(dt)
   -- detect first lap completion
   if not s.firstLapDone then
     if car.lapCount ~= nil then
-      local lap = car.lapCount or 0
-      if lap > s.startLapCount then
+      if car.lapCount > s.startLapCount then
         s.firstLapDone = true
         ac.debug('Arbitrator','first lap detected via lapCount for index '..tostring(i)..' lap='..tostring(lap))
       end
