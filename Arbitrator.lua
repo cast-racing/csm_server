@@ -14,18 +14,6 @@ local tweaksCfg = extrasCfg and extrasCfg:mapSection('EXTRA_TWEAKS', {
 -- First-lap speed limiter defaults (km/h)
 local FIRST_LAP_SPEED_LIMIT = 120.0
 local FIRST_LAP_BRAKE_FORCE = 0
-local DEBUG_LOG_FILE = '/tmp/arbitrator_debug.log'
-
-local function dbg(msg)
-  -- console
-  pcall(ac.debug, 'Arbitrator', tostring(msg))
-  -- file
-  local ok, f = pcall(io.open, DEBUG_LOG_FILE, 'a')
-  if ok and f then
-    pcall(f.write, f, os.date('%Y-%m-%d %H:%M:%S') .. ' ' .. tostring(msg) .. '\n')
-    pcall(f.close, f)
-  end
-end
 
 local MIN_SPEED = 2.0 / 3.6   -- ~2 km/h
 local TIME_THRESHOLD = tweaksCfg.TIME_THRESHOLD
@@ -152,7 +140,6 @@ function script.update(dt)
   local spline = car.splinePosition or 0
   if not s.firstLapDone and s.prevSpline and s.prevSpline > 0.9 and spline < 0.1 then
     s.firstLapDone = true
-    dbg('car ' .. tostring(i) .. ' first lap completed (spline wrap)')
   end
   s.prevSpline = spline
 
@@ -173,9 +160,7 @@ function script.update(dt)
   -- and only when the car is not currently stalled/crashed.
   if not s.firstLapDone and reason == nil then
     local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
-    dbg('car ' .. tostring(i) .. ' first-lap active, speed=' .. tostring(speedKmh) .. ' limit=' .. tostring(FIRST_LAP_SPEED_LIMIT))
     if speedKmh and speedKmh > FIRST_LAP_SPEED_LIMIT then
-      dbg('car ' .. tostring(i) .. ' applying speed cap (speed=' .. tostring(speedKmh) .. ')')
       physics.forceUserBrakesFor(0.1, FIRST_LAP_BRAKE_FORCE)
       physics.forceUserThrottleFor(0.1, 0)
       showMessage(s, 'Speed cap active', 'First lap limited to ' .. tostring(FIRST_LAP_SPEED_LIMIT) .. ' km/h')
