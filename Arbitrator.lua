@@ -142,11 +142,8 @@ function script.update(dt)
 
   -- detect first lap completion
   if not s.firstLapDone then
-    showMessage(s, 'First lap not done', 'Checking')
     if car.lapCount ~= nil then
-      showMessage(s, 'Car lapcount', 'Counted')
       if car.lapCount > s.startLapCount then
-        showMessage(s, 'First lap completed', 'True')
         s.firstLapDone = true
       end
     end
@@ -168,10 +165,9 @@ function script.update(dt)
   -- First-lap speed limiter
   if not s.firstLapDone and reason == nil then
     local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
-    showMessage(s, 'SpeedLimiter active', 'speed=' .. tostring(math.floor(speedKmh or 0)) .. ' limit=' .. tostring(FIRST_LAP_SPEED_LIMIT))
     if speedKmh and speedKmh > FIRST_LAP_SPEED_LIMIT then
-      physics.forceUserBrakesFor(0.1, FIRST_LAP_BRAKE_FORCE)
-      physics.forceUserThrottleFor(0.1, 0)
+      physics.forceUserBrakesFor(0.5, FIRST_LAP_BRAKE_FORCE)
+      physics.forceUserThrottleFor(0.5, 0)
       showMessage(s, 'BRAKING APPLIED', 'speed=' .. tostring(math.floor(speedKmh)) .. ' brake=' .. tostring(FIRST_LAP_BRAKE_FORCE))
     end
   else
