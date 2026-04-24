@@ -12,7 +12,7 @@ local tweaksCfg = extrasCfg and extrasCfg:mapSection('EXTRA_TWEAKS', {
   TIME_THRESHOLD = 5.0,
   COOLDOWN = 10.0,
   FIRST_LAP_SPEED_LIMIT = 100.0,
-  FIRST_LAP_BRAKE_FORCE = 1.0,
+  FIRST_LAP_BRAKE_FORCE = 100.0,
 }
 
 -- First-lap speed limiter (from config)
