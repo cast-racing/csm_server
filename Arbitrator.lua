@@ -111,9 +111,6 @@ local function resetState(s)
 end
 
 function script.update(dt)
-  function script.update(dt)
-    ac.setMessage('Arbitrator', 'update running ' .. tostring(math.floor((sim.time or 0) * 10)))
-
   if sim.carsCount <= 0 then return end
 
   local i = TARGET_CAR_INDEX
@@ -143,13 +140,13 @@ function script.update(dt)
   s.isProgressing = isProgressing(car, s)
   updateProtectedExit(car, s, dt)
 
-  -- debug line
-  ac.debug('Arbitrator', 'init lapCount=' .. tostring(car.lapCount) .. ' startLap=' .. tostring(s.startLapCount))
-
   -- detect first lap completion
   if not s.firstLapDone then
+    showMessage(s, 'First lap not done', 'Checking')
     if car.lapCount ~= nil then
+      showMessage(s, 'Car lapcount', 'Counted')
       if car.lapCount > s.startLapCount then
+        showMessage(s, 'First lap completed', 'True')
         s.firstLapDone = true
       end
     end
@@ -170,18 +167,18 @@ function script.update(dt)
 
   -- First-lap speed limiter: apply only while first lap not yet completed
   -- and only when the car is not currently stalled/crashed.
+  -- First-lap speed limiter: apply only while first lap not yet completed
+  -- and only when the car is not currently stalled/crashed.
   if not s.firstLapDone and reason == nil then
     local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
-    ac.debug('Arbitrator','index='..tostring(i)..' lapCount='..tostring(car.lapCount)..' firstLapDone='..tostring(s.firstLapDone)..' speed='..tostring(speedKmh))
-    if FIRST_LAP_BRAKE_FORCE == 0 then
-      ac.debug('Arbitrator','WARNING: FIRST_LAP_BRAKE_FORCE is 0; no braking will be applied')
-    end
+    showMessage(s, 'SpeedLimiter active', 'speed=' .. tostring(math.floor(speedKmh or 0)) .. ' limit=' .. tostring(FIRST_LAP_SPEED_LIMIT))
     if speedKmh and speedKmh > FIRST_LAP_SPEED_LIMIT then
       physics.forceUserBrakesFor(0.1, FIRST_LAP_BRAKE_FORCE)
       physics.forceUserThrottleFor(0.1, 0)
-      ac.debug('Arbitrator','applying speed cap, speed='..tostring(speedKmh)..' limit='..tostring(FIRST_LAP_SPEED_LIMIT)..' brake='..tostring(FIRST_LAP_BRAKE_FORCE))
-      showMessage(s, 'Speed cap active', 'First lap limited to ' .. tostring(FIRST_LAP_SPEED_LIMIT) .. ' km/h')
+      showMessage(s, 'BRAKING APPLIED', 'speed=' .. tostring(math.floor(speedKmh)) .. ' brake=' .. tostring(FIRST_LAP_BRAKE_FORCE))
     end
+  else
+    showMessage(s, 'SpeedLimiter SKIPPED', 'firstLapDone=' .. tostring(s.firstLapDone) .. ' reason=' .. tostring(reason))
   end
 
   -- Car recovered: reset timer so the clock starts fresh on the next crash.
