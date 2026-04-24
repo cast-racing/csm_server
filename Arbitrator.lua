@@ -165,10 +165,7 @@ function script.update(dt)
     return
   end
 
-  -- First-lap speed limiter: apply only while first lap not yet completed
-  -- and only when the car is not currently stalled/crashed.
-  -- First-lap speed limiter: apply only while first lap not yet completed
-  -- and only when the car is not currently stalled/crashed.
+  -- First-lap speed limiter
   if not s.firstLapDone and reason == nil then
     local speedKmh = car.speedKmh or ((car.speedMs or 0) * 3.6)
     showMessage(s, 'SpeedLimiter active', 'speed=' .. tostring(math.floor(speedKmh or 0)) .. ' limit=' .. tostring(FIRST_LAP_SPEED_LIMIT))
