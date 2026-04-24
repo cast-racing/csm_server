@@ -148,6 +148,7 @@ function script.update(dt)
         s.firstLapDone = true
         ac.debug('Arbitrator','first lap detected via lapCount for index '..tostring(i)..' lap='..tostring(lap))
       end
+    end
   end
 
   -- Cooldown (prevents restart spam loop)
