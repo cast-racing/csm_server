@@ -180,6 +180,10 @@ local function isStalled(car, state)
   return (car.speedMs or 0) < MIN_SPEED_MS and not state.isProgressing
 end
 
+local function isAwaitingRaceStart()
+  return sim.raceSessionType == ac.SessionType.Race and not sim.isSessionStarted
+end
+
 local function enforceFirstLapSpeedLimit(car, state)
   if state.firstLapDone then
     return
@@ -218,6 +222,11 @@ function script.update(dt)
   updateProgressState(car, carState, dt)
   updateProtectedExit(car, carState, dt)
   updateFirstLapState(car, carState)
+
+  if isAwaitingRaceStart() then
+    resetRecoveryTimer(carState)
+    return
+  end
 
   if carState.cooldown > 0 then
     carState.cooldown = math.max(0, carState.cooldown - dt)
